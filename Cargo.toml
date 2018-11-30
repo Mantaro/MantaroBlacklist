@@ -1,0 +1,19 @@
+[package]
+name = "blacklistbot"
+version = "0.1.0"
+authors = ["natanbc"]
+
+[dependencies]
+kankyo = "~0.2"
+rocket = "0.4.0-rc.1"
+rocksdb = "0.10.1"
+serde = "1.0"
+serde_json = "1.0"
+serde_derive = "1.0"
+serenity = "0.5.11"
+typemap = "0.3"
+
+[dependencies.rocket_contrib]
+version = "0.4.0-rc.1"
+default-features = false
+features = ["json"]
