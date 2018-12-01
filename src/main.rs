@@ -65,20 +65,20 @@ fn main() {
         .configure(|c| c.prefix(&env::var("PREFIX").unwrap_or("~".to_string()))) // set the bot's prefix to "~"
         .on("lookup", |ctx, msg, mut args| {
             if args.is_empty() {
-                msg.reply("Please provide an user id")?;
+                msg.channel_id.send_message(|m| m.content("Please provide an user id"))?;
                 return Ok(());
             }
             let id = match args.single::<u64>() {
                 Ok(i) => i,
                 Err(_) => {
-                    msg.reply("Invalid user id")?;
+                    msg.channel_id.send_message(|m| m.content("Invalid user id"))?;
                     return Ok(());
                 }
             };
             let data = ctx.data.lock();
             match data.get::<DBKey>().unwrap().get(&format!("{}", id).as_bytes())? {
-                Some(value) => msg.reply(value.to_utf8().unwrap()),
-                None => msg.reply("No reason found")
+                Some(value) => msg.channel_id.send_message(|m| m.content(value.to_utf8().unwrap())),
+                None => msg.channel_id.send_message(|m| m.content("No reason found"))
             }?;
             Ok(())
         }));
