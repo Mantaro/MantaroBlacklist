@@ -16,6 +16,7 @@ use rocket_contrib::json::Json;
 use rocksdb::DB;
 use serenity::client::Client;
 use serenity::prelude::EventHandler;
+use serenity::framework::standard::Args;
 use serenity::framework::standard::StandardFramework;
 use std::env;
 use std::sync::Arc;
@@ -23,9 +24,13 @@ use std::thread;
 use typemap::Key;
 
 struct DBKey;
-
 impl Key for DBKey {
     type Value = Arc<DB>;
+}
+
+struct WhitelistKey;
+impl Key for WhitelistKey {
+    type Value = Vec<u64>;
 }
 
 #[derive(Deserialize)]
@@ -57,6 +62,9 @@ fn get_reason(db: State<Arc<DB>>, id: u64, api_key: ApiKey) -> Result<Option<Jso
 fn main() {
     kankyo::load().expect("Unable to load .env");
     env::var("KEY").expect("No KEY defined");
+    let whitelist = env::var("WHITELIST").expect("No whitelist defined").split(",")
+        .map(|s| s.trim().to_string().parse::<u64>().expect("Malformed user id"))
+        .collect::<Vec<_>>();
     let db = Arc::new(DB::open_default(env::var("DB_PATH").unwrap_or("data".to_string())).expect("Unable to create rocksdb instance"));
 
     let mut client = Client::new(&env::var("TOKEN").expect("token"), Handler)
@@ -81,11 +89,48 @@ fn main() {
                 None => msg.channel_id.send_message(|m| m.content("No reason found"))
             }?;
             Ok(())
-        }));
+        })
+        .on("setreason", |ctx, msg, mut args| {
+            let data = ctx.data.lock();
+            if !data.get::<WhitelistKey>().unwrap().contains(msg.author.id.as_u64()) {
+                msg.channel_id.send_message(|m| m.content("You do not have permission to use this command"))?;
+                return Ok(());
+            }
+            if args.is_empty() {
+                msg.channel_id.send_message(|m| m.content("Please provide an user id"))?;
+                return Ok(());
+            }
+            let mut copy = Args::new(args.rest(), &[" ".to_string()]);
+            let mut ids: Vec<u64> = Vec::new();
+            for id in copy.iter::<u64>() {
+                if !id.is_ok() {
+                    break;
+                }
+                ids.push(id.unwrap());
+            }
+            if ids.len() == 0 {
+                msg.channel_id.send_message(|m| m.content("Invalid user id(s)"))?;
+                return Ok(());
+            }
+            args.skip_for(ids.len() as u32);
+            if args.is_empty() {
+                msg.channel_id.send_message(|m| m.content("Please provide an user id"))?;
+                return Ok(());
+            }
+            let reason = args.rest();
+            let db = data.get::<DBKey>().unwrap();
+            for id in &ids {
+                db.put(&format!("{}", id).as_bytes(), reason.as_bytes()).expect("unable to save");
+            }
+            msg.channel_id.send_message(|m| m.content("Successfully saved"))?;
+            Ok(())
+        })
+    );
 
     {
         let mut data = client.data.lock();
         data.insert::<DBKey>(Arc::clone(&db));
+        data.insert::<WhitelistKey>(whitelist);
     }
 
     thread::spawn(move || {
